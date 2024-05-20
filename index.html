@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Interactive Globe</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #111;
+            color: #fff;
+            position: relative;
+        }
+        #globe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            display: block;
+            margin: 0;
+            padding: 0;
+            z-index: 1;
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+        }
+        .aura {
+            fill: url(#radial-gradient);
+            pointer-events: none;
+        }
+        .report-button, .chart-button {
+            position: fixed;
+            top: 50%;
+            background-color: #333;
+            padding: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            transform: translateY(-50%);
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out, box-shadow 0.5s;
+            z-index: 2;
+        }
+        .report-button {
+            right: 40px;
+        }
+        .chart-button {
+            left: 40px;
+        }
+        .report-button.show, .chart-button.show {
+            opacity: 1;
+            box-shadow: 0 0 10px 2px #00f;
+        }
+        .sociosync-label {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0);
+            font-size: 48px;
+            opacity: 1;
+            transition: transform 1s ease-in-out;
+            z-index: 2;
+        }
+        .sociosync-label.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        @keyframes zoomIn {
+            from {
+                transform: translate(-50%, -50%) scale(0);
+            }
+            to {
+                transform: translate(-50%, -50%) scale(1);
+            }
+        }
+
+        @keyframes shootingStar {
+            from {
+                transform: translate(-100%, -100%);
+                opacity: 1;
+            }
+            to {
+                transform: translate(200%, 200%);
+                opacity: 0;
+            }
+        }
+
+        .shooting-star {
+            position: absolute;
+            width: 2px;
+            height: 2px;
+            background-color: #fff;
+            border-radius: 50%;
+            animation: shootingStar 3s linear infinite;
+            animation-delay: calc(-1 * var(--delay));
+        }
+
+        .play-button {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            background-color: #444;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            z-index: 3;
+        }
+
+        #popup {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 300px;
+            padding: 20px;
+            background-color: #222;
+            border: 1px solid #555;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+            display: none;
+            z-index: 4;
+        }
+        #popup-title {
+            font-size: 20px;
+            margin-bottom: 10px;
+        }
+        .close-button {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: #333;
+            color: #fff;
+            border: none;
+            padding: 5px;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+        .bar-container {
+            margin: 10px 0;
+        }
+        .bar {
+            width: 0;
+            height: 20px;
+            background-color: rgb(0, 255, 42);
+            margin-bottom: 5px;
+            transition: width 1s;
+        }
+
+        /* Blinking animation for stars */
+        .star {
+            animation: blink 1s infinite alternate; /* Blink animation */
+        }
+
+        @keyframes blink {
+            0% {
+                opacity: 1; /* Visible */
+            }
+            100% {
+                opacity: 0; /* Invisible */
+            }
+        }
+    </style>
+</head>
+<body>
+    <svg id="background"></svg>
+    <svg id="globe"></svg>
+    <div class="report-button" onclick="window.open('https://typst.app/project/rtDoi493RhAi-UNeQOQk5h', '_blank')">Project Report</div>
+    <div class="chart-button" onclick="window.open('https://straywolf07.github.io/Audio-files/piechart.html', '_blank')">3D Pie Chart</div>
+    <div class="sociosync-label">SocioSync</div>
+    <button class="play-button" onclick="toggleAudio()">Play Music</button>
+    <audio id="background-music" loop>
+        <source src="https://raw.githubusercontent.com/StrayWolf07/Audio-files/main/interstellar.mp3" type="audio/mpeg">
+        Your browser does not support the audio element.
+    </audio>
+    <div id="popup">
+        <button class="close-button" onclick="togglePopup()">X</button>
+        <div id="popup-title"></div>
+        <div class="bar-container">
+            <div>No. of Publications: <span id="num-publications-value"></span></div>
+            <div id="num-publications-bar" class="bar"></div>
+        </div>
+        <div class="bar-container">
+            <div>Percentage: <span id="percentage-value"></span></div>
+            <div id="percentage-bar" class="bar"></div>
+        </div>
+        <div class="bar-container">
+            <div>TLCS: <span id="tlcs-value"></span></div>
+            <div id="tlcs-bar" class="bar"></div>
+        </div>
+        <div class="bar-container">
+            <div>TGCS: <span id="tgcs-value"></span></div>
+            <div id="tgcs-bar" class="bar"></div>
+        </div>
+    </div>
+    <script src="https://d3js.org/d3.v6.min.js"></script>
+    <script src="https://unpkg.com/topojson@3"></script>
+    <script>
+        // Define the values and bar fill percentages directly in the script
+        const countryData = {
+            "England": { publications: 470, publicationsFill: 75, percentage: 40, percentageFill: 40, tlcs: 30, tlcsFill: 30, tgcs: 42856, tgcsFill: 60 },
+            "Germany": { publications: 63, publicationsFill: 63, percentage: 30, percentageFill: 30, tlcs: 35, tlcsFill: 35, tgcs: 47, tgcsFill: 47 },
+            "USA": { publications: 1929, publicationsFill: 80, percentage: 60, percentageFill: 60, tlcs: 40, tlcsFill: 40, tgcs: 42856, tgcsFill: 80 },
+            "Italy": { publications: 1929, publicationsFill: 80, percentage: 60, percentageFill: 60, tlcs: 40, tlcsFill: 40, tgcs: 42856, tgcsFill: 80 },
+            "Canada": { publications: 1929, publicationsFill: 80, percentage: 60, percentageFill: 60, tlcs: 40, tlcsFill: 40, tgcs: 42856, tgcsFill: 80 },
+            "Japan": { publications: 470, publicationsFill: 75, percentage: 40, percentageFill: 40, tlcs: 30, tlcsFill: 30, tgcs: 42856, tgcsFill: 60 },
+            "China": { publications: 63, publicationsFill: 63, percentage: 30, percentageFill: 30, tlcs: 35, tlcsFill: 35, tgcs: 47, tgcsFill: 47 },
+            "France": { publications: 1929, publicationsFill: 80, percentage: 60, percentageFill: 60, tlcs: 40, tlcsFill: 40, tgcs: 42856, tgcsFill: 80 },
+            "Spain": { publications: 1929, publicationsFill: 80, percentage: 60, percentageFill: 60, tlcs: 40, tlcsFill: 40, tgcs: 42856, tgcsFill: 80 },
+            "South Korea": { publications: 1929, publicationsFill: 80, percentage: 60, percentageFill: 60, tlcs: 40, tlcsFill: 40, tgcs: 42856, tgcsFill: 80 },
+            "Switzerland": { publications: 470, publicationsFill: 75, percentage: 40, percentageFill: 40, tlcs: 30, tlcsFill: 30, tgcs: 42856, tgcsFill: 60 },
+            "Australia": { publications: 63, publicationsFill: 63, percentage: 30, percentageFill: 30, tlcs: 35, tlcsFill: 35, tgcs: 47, tgcsFill: 47 },
+            "Netherlands": { publications: 1929, publicationsFill: 80, percentage: 60, percentageFill: 60, tlcs: 40, tlcsFill: 40, tgcs: 42856, tgcsFill: 80 },
+            "Austria": { publications: 1929, publicationsFill: 80, percentage: 60, percentageFill: 60, tlcs: 40, tlcsFill: 40, tgcs: 42856, tgcsFill: 80 },
+            "Belgium": { publications: 1929, publicationsFill: 80, percentage: 60, percentageFill: 60, tlcs: 40, tlcsFill: 40, tgcs: 42856, tgcsFill: 80 },
+            "Singapore": { publications: 470, publicationsFill: 75, percentage: 40, percentageFill: 40, tlcs: 30, tlcsFill: 30, tgcs: 42856, tgcsFill: 60 },
+            "Sweden": { publications: 63, publicationsFill: 63, percentage: 30, percentageFill: 30, tlcs: 35, tlcsFill: 35, tgcs: 47, tgcsFill: 47 },
+            "India": { publications: 1929, publicationsFill: 80, percentage: 60, percentageFill: 60, tlcs: 40, tlcsFill: 40, tgcs: 42856, tgcsFill: 80 },
+            "Turkey": { publications: 1929, publicationsFill: 80, percentage: 60, percentageFill: 60, tlcs: 40, tlcsFill: 40, tgcs: 42856, tgcsFill: 80 },
+            "Brazil": { publications: 1929, publicationsFill: 80, percentage: 60, percentageFill: 60, tlcs: 40, tlcsFill: 40, tgcs: 42856, tgcsFill: 80 },
+            "Israel": { publications: 470, publicationsFill: 75, percentage: 40, percentageFill: 40, tlcs: 30, tlcsFill: 30, tgcs: 42856, tgcsFill: 60 },
+            "Taiwan": { publications: 63, publicationsFill: 63, percentage: 30, percentageFill: 30, tlcs: 35, tlcsFill: 35, tgcs: 47, tgcsFill: 47 },
+            "Denmark": { publications: 1929, publicationsFill: 80, percentage: 60, percentageFill: 60, tlcs: 40, tlcsFill: 40, tgcs: 42856, tgcsFill: 80 },
+            "Portugal": { publications: 1929, publicationsFill: 80, percentage: 60, percentageFill: 60, tlcs: 40, tlcsFill: 40, tgcs: 42856, tgcsFill: 80 },
+            "Greece": { publications: 1929, publicationsFill: 80, percentage: 60, percentageFill: 60, tlcs: 40, tlcsFill: 40, tgcs: 42856, tgcsFill: 80 },
+            "Iran": { publications: 470, publicationsFill: 75, percentage: 40, percentageFill: 40, tlcs: 30, tlcsFill: 30, tgcs: 42856, tgcsFill: 60 },
+            "Poland": { publications: 63, publicationsFill: 63, percentage: 30, percentageFill: 30, tlcs: 35, tlcsFill: 35, tgcs: 47, tgcsFill: 47 },
+            "Romania": { publications: 1929, publicationsFill: 80, percentage: 60, percentageFill: 60, tlcs: 40, tlcsFill: 40, tgcs: 42856, tgcsFill: 80 },
+            "Mexico": { publications: 1929, publicationsFill: 80, percentage: 60, percentageFill: 60, tlcs: 40, tlcsFill: 40, tgcs: 42856, tgcsFill: 80 },
+            "New Zealand": { publications: 1929, publicationsFill: 80, percentage: 60, percentageFill: 60, tlcs: 40, tlcsFill: 40, tgcs: 42856, tgcsFill: 80 },
+            "Finland": { publications: 470, publicationsFill: 75, percentage: 40, percentageFill: 40, tlcs: 30, tlcsFill: 30, tgcs: 42856, tgcsFill: 60 },
+            "Russia": { publications: 63, publicationsFill: 63, percentage: 30, percentageFill: 30, tlcs: 35, tlcsFill: 35, tgcs: 47, tgcsFill: 47 },
+            "Saudi Arabia": { publications: 1929, publicationsFill: 80, percentage: 60, percentageFill: 60, tlcs: 40, tlcsFill: 40, tgcs: 42856, tgcsFill: 80 },
+            "Norway": { publications: 1929, publicationsFill: 80, percentage: 60, percentageFill: 60, tlcs: 40, tlcsFill: 40, tgcs: 42856, tgcsFill: 80 },
+            "Malasiya": { publications: 1929, publicationsFill: 80, percentage: 60, percentageFill: 60, tlcs: 40, tlcsFill: 40, tgcs: 42856, tgcsFill: 80 },
+            "Slovenia": { publications: 470, publicationsFill: 75, percentage: 40, percentageFill: 40, tlcs: 30, tlcsFill: 30, tgcs: 42856, tgcsFill: 60 },
+            "Argentina": { publications: 63, publicationsFill: 63, percentage: 30, percentageFill: 30, tlcs: 35, tlcsFill: 35, tgcs: 47, tgcsFill: 47 },
+            "Chile": { publications: 1929, publicationsFill: 80, percentage: 60, percentageFill: 60, tlcs: 40, tlcsFill: 40, tgcs: 42856, tgcsFill: 80 },
+            "Czech Republic": { publications: 1929, publicationsFill: 80, percentage: 60, percentageFill: 60, tlcs: 40, tlcsFill: 40, tgcs: 42856, tgcsFill: 80 },
+            "Hungary": { publications: 1929, publicationsFill: 80, percentage: 60, percentageFill: 60, tlcs: 40, tlcsFill: 40, tgcs: 42856, tgcsFill: 80 },
+            "Ireland": { publications: 470, publicationsFill: 75, percentage: 40, percentageFill: 40, tlcs: 30, tlcsFill: 30, tgcs: 42856, tgcsFill: 60 },
+            "Cyprus": { publications: 63, publicationsFill: 63, percentage: 30, percentageFill: 30, tlcs: 35, tlcsFill: 35, tgcs: 47, tgcsFill: 47 },
+            "Egypt": { publications: 1929, publicationsFill: 80, percentage: 60, percentageFill: 60, tlcs: 40, tlcsFill: 40, tgcs: 42856, tgcsFill: 80 },
+            "Serbia": { publications: 1929, publicationsFill: 80, percentage: 60, percentageFill: 60, tlcs: 40, tlcsFill: 40, tgcs: 42856, tgcsFill: 80 },
+            "Slovakia": { publications: 1929, publicationsFill: 80, percentage: 60, percentageFill: 60, tlcs: 40, tlcsFill: 40, tgcs: 42856, tgcsFill: 80 },
+            "Columbia": { publications: 63, publicationsFill: 63, percentage: 30, percentageFill: 30, tlcs: 35, tlcsFill: 35, tgcs: 47, tgcsFill: 47 },
+            "Croatia": { publications: 1929, publicationsFill: 80, percentage: 60, percentageFill: 60, tlcs: 40, tlcsFill: 40, tgcs: 42856, tgcsFill: 80 },
+            "Thailand": { publications: 1929, publicationsFill: 80, percentage: 60, percentageFill: 60, tlcs: 40, tlcsFill: 40, tgcs: 42856, tgcsFill: 80 },
+            "Pakistan": { publications: 1929, publicationsFill: 80, percentage: 60, percentageFill: 60, tlcs: 40, tlcsFill: 40, tgcs: 42856, tgcsFill: 80 },
+            "UAE": { publications: 1929, publicationsFill: 80, percentage: 60, percentageFill: 60, tlcs: 40, tlcsFill: 40, tgcs: 42856, tgcsFill: 80 }
+        };
+
+        const backgroundMusic = document.getElementById('background-music');
+        let rotationTimer; // Store the rotation timer reference
+
+        function toggleAudio() {
+            if (backgroundMusic.paused) {
+                backgroundMusic.play();
+                document.querySelector('.play-button').textContent = 'Pause Music';
+            } else {
+                backgroundMusic.pause();
+                document.querySelector('.play-button').textContent = 'Play Music';
+            }
+        }
+
+        function togglePopup() {
+            const popup = document.getElementById('popup');
+            if (popup.style.display === 'block') {
+                popup.style.display = 'none';
+                resumeGlobeRotation(); // Resume globe rotation when popup is closed
+            } else {
+                popup.style.display = 'block';
+                stopGlobeRotation(); // Stop globe rotation when popup is open
+            }
+        }
+
+        function stopGlobeRotation() {
+            if (rotationTimer) {
+                rotationTimer.stop();
+            }
+        }
+
+        function resumeGlobeRotation() {
+            rotationTimer = d3.timer(function() {
+                const rotate = projection.rotate();
+                const rotateSpeed = 0.25;
+                projection.rotate([rotate[0] + rotateSpeed, rotate[1]]);
+                svg.selectAll("path").attr("d", path);
+            });
+        }
+
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+
+        const background = d3.select("#background")
+            .attr("width", width)
+            .attr("height", height);
+
+        const svg = d3.select("#globe")
+            .attr("width", width)
+            .attr("height", height);
+
+        const projection = d3.geoOrthographic()
+            .scale(height / 2.1)
+            .translate([width / 2, height / 2]);
+
+        const path = d3.geoPath()
+            .projection(projection);
+
+        svg.append("defs")
+            .append("radialGradient")
+            .attr("id", "radial-gradient")
+            .selectAll("stop")
+            .data([
+                {offset: "0%", color: "#0000ff"},
+                {offset: "100%", color: "transparent"}
+            ])
+            .enter().append("stop")
+            .attr("offset", function(d) { return d.offset; })
+            .attr("stop-color", function(d) { return d.color; });
+
+        svg.append("rect")
+            .attr("class", "aura")
+            .attr("x", 0)
+            .attr("y", 0)
+            .attr("width", width)
+            .attr("height", height);
+
+        // Generate random white dots as background
+        const numDots = 100;
+        const dotData = Array.from({ length: numDots }, () => ({
+            x: Math.random() * width,
+            y: Math.random() * height
+        }));
+
+        background.selectAll(".dot")
+            .data(dotData)
+            .enter().append("circle")
+            .attr("class", "dot")
+            .attr("cx", d => d.x)
+            .attr("cy", d => d.y)
+            .attr("r", 1)
+            .attr("fill", "#fff");
+
+        const numStars = 200;
+        const starsData = d3.range(numStars).map(function() {
+            return {
+                x: Math.random() * width,
+                y: Math.random() * height,
+                r: Math.random() * 1.5
+            };
+        });
+
+        background.selectAll(".star")
+            .data(starsData)
+            .enter().append("circle")
+            .attr("class", "star")
+            .attr("cx", function(d) { return d.x; })
+            .attr("cy", function(d) { return d.y; })
+            .attr("r", function(d) { return d.r; })
+            .attr("fill", "#fff");
+
+        const numShootingStars = 10;
+        const shootingStarsData = d3.range(numShootingStars).map(function(i) {
+            return {
+                x: Math.random() * width,
+                y: Math.random() * height,
+                delay: Math.random() * 5
+            };
+        });
+
+        background.selectAll(".shooting-star")
+            .data(shootingStarsData)
+            .enter().append("div")
+            .attr("class", "shooting-star")
+            .style("--delay", function(d) { return d.delay + "s"; })
+            .style("left", function(d) { return d.x + "px"; })
+            .style("top", function(d) { return d.y + "px"; });
+
+        document.addEventListener("DOMContentLoaded", function() {
+            const reportButton = document.querySelector('.report-button');
+            reportButton.classList.add('show');
+
+            const chartButton = document.querySelector('.chart-button');
+            chartButton.classList.add('show');
+
+            const socioSyncLabel = document.querySelector('.sociosync-label');
+            setTimeout(function() {
+                socioSyncLabel.classList.remove('hidden');
+                socioSyncLabel.style.animation = 'zoomIn 1s forwards';
+            }, 1000);
+
+            setTimeout(function() {
+                socioSyncLabel.style.animation = 'none';
+                socioSyncLabel.style.transform = 'translate(-50%, -50%) scale(1)';
+                document.getElementById("globe").style.opacity = 1;
+
+                setTimeout(function() {
+                    socioSyncLabel.style.display = 'none';
+                }, 500);
+            }, 2000);
+        });
+
+        d3.json("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson").then(function(data) {
+            const countries = svg.append("g")
+                .selectAll("path")
+                .data(data.features)
+                .enter()
+                .append("path")
+                .attr("d", path)
+                .attr("fill", "#666")
+                .attr("stroke", "#444")
+                .on("mouseover", function(event, d) {
+                    d3.select(this)
+                        .attr("fill", "#ff8c00");
+
+                    svg.append("text")
+                        .attr("class", "country-label")
+                        .attr("x", event.pageX)
+                        .attr("y", event.pageY - 10)
+                        .attr("text-anchor", "middle")
+                        .attr("font-size", "14px")
+                        .attr("fill", "#fff")
+                        .text(d.properties.name);
+                })
+                .on("mouseout", function(d) {
+                    d3.select(this)
+                        .attr("fill", "#666");
+
+                    svg.selectAll(".country-label").remove();
+                })
+                .on("click", function(event, d) {
+                    showPopup(d.properties.name);
+                });
+
+            let isDragging = false;
+
+            svg.call(d3.drag().on("start", function(event) {
+                isDragging = true;
+            }).on("drag", function(event) {
+                if (isDragging) {
+                    const rotate = projection.rotate();
+                    const k = 1 / projection.scale();
+                    projection.rotate([rotate[0] + event.dx * k, rotate[1] - event.dy * k]);
+                    countries.attr("d", path);
+                }
+            }).on("end", function() {
+                isDragging = false;
+            }));
+
+            resumeGlobeRotation(); // Start the initial rotation
+        });
+
+        function showPopup(country) {
+            const popup = document.getElementById('popup');
+            const title = document.getElementById('popup-title');
+            title.textContent = country;
+            popup.style.display = 'block';
+            stopGlobeRotation(); // Stop globe rotation when popup is opened
+
+            const data = countryData[country] || { publications: 0, publicationsFill: 0, percentage: 0, percentageFill: 0, tlcs: 0, tlcsFill: 0, tgcs: 0, tgcsFill: 0 };
+
+            document.getElementById('num-publications-value').textContent = data.publications;
+            document.getElementById('percentage-value').textContent = data.percentage + '%';
+            document.getElementById('tlcs-value').textContent = data.tlcs;
+            document.getElementById('tgcs-value').textContent = data.tgcs;
+
+            document.getElementById('num-publications-bar').style.width = data.publicationsFill + '%';
+            document.getElementById('percentage-bar').style.width = data.percentageFill + '%';
+            document.getElementById('tlcs-bar').style.width = data.tlcsFill + '%';
+            document.getElementById('tgcs-bar').style.width = data.tgcsFill + '%';
+        }
+    </script>
+</body>
+</html>
